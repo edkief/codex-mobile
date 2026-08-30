@@ -25,6 +25,7 @@ import {
 import { createServer as createApp } from '../server/httpServer.js'
 import { generatePassword } from '../server/password.js'
 import { spawnSyncCommand } from '../utils/commandInvocation.js'
+import { normalizeBasePath } from '../basePath.js'
 
 const program = new Command().name('codexui').description('Web interface for Codex app-server')
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -315,8 +316,8 @@ function parseCloudflaredUrl(chunk: string): string | null {
   return urlMatch[urlMatch.length - 1] ?? null
 }
 
-function getAccessibleUrls(port: number): string[] {
-  const urls = new Set<string>([`http://localhost:${String(port)}`])
+function getAccessibleUrls(port: number, basePath = ''): string[] {
+  const urls = new Set<string>([`http://localhost:${String(port)}${basePath}`])
   try {
     const interfaces = networkInterfaces()
     for (const entries of Object.values(interfaces)) {
@@ -328,7 +329,7 @@ function getAccessibleUrls(port: number): string[] {
           continue
         }
         if (entry.family === 'IPv4') {
-          urls.add(`http://${entry.address}:${String(port)}`)
+          urls.add(`http://${entry.address}:${String(port)}${basePath}`)
         }
       }
     }
@@ -567,7 +568,8 @@ async function startServer(options: {
     `  Codex sandbox: ${runtimeConfig.sandboxMode}`,
     `  Approval policy: ${runtimeConfig.approvalPolicy}`,
   ]
-  const accessUrls = getAccessibleUrls(port)
+  const basePath = normalizeBasePath(process.env.CODEXUI_BASE_PATH)
+  const accessUrls = getAccessibleUrls(port, basePath)
   if (accessUrls.length > 0) {
     lines.push(`  Local:    ${accessUrls[0]}`)
     for (const accessUrl of accessUrls.slice(1)) {
@@ -584,7 +586,7 @@ async function startServer(options: {
     lines.push('  Use that file to retrieve the password for untrusted origins.')
   }
 
-  const tunnelQrUrl = tunnelUrl ? buildTunnelAutologinUrl(tunnelUrl, password) : null
+  const tunnelQrUrl = tunnelUrl ? buildTunnelAutologinUrl(`${tunnelUrl}${basePath}`, password) : null
   if (tunnelUrl) {
     lines.push(`  Tunnel:   ${tunnelQrUrl ?? tunnelUrl}`)
     lines.push('  Tunnel QR code below')
@@ -597,7 +599,7 @@ async function startServer(options: {
     qrcode.generate(tunnelQrUrl, { small: true })
     console.log('')
   }
-  if (options.open) openBrowser(`http://localhost:${String(port)}`)
+  if (options.open) openBrowser(`http://localhost:${String(port)}${basePath || '/'}`)
 
   function shutdown() {
     console.log('\nShutting down...')

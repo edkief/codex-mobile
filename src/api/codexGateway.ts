@@ -414,6 +414,16 @@ export type AccountsListResult = {
   importedStorageId?: string
 }
 
+export type CodexDeviceLoginStartResult = {
+  verificationUrl: string
+  userCode: string
+}
+
+export type CodexDeviceLoginStatus =
+  | { state: 'idle' | 'pending' }
+  | { state: 'error'; message: string }
+  | ({ state: 'complete' } & AccountsListResult)
+
 type ThreadFileChangeFallbackEntry = {
   turnId: string
   turnIndex: number
@@ -1434,7 +1444,7 @@ export async function refreshAccountsFromAuth(): Promise<AccountsListResult> {
   return normalizeAccountsListResult(envelope?.data)
 }
 
-export async function startCodexLogin(): Promise<string> {
+export async function startCodexLogin(): Promise<CodexDeviceLoginStartResult> {
   const response = await appFetch('/codex-api/accounts/login/start', {
     method: 'POST',
   })
@@ -1444,25 +1454,38 @@ export async function startCodexLogin(): Promise<string> {
   }
   const envelope = asRecord(payload)
   const data = asRecord(envelope?.data)
-  const loginUrl = readString(data?.loginUrl)
-  if (!loginUrl) {
+  const verificationUrl = readString(data?.verificationUrl)
+  const userCode = readString(data?.userCode)
+  if (!verificationUrl || !userCode) {
     throw new Error('Failed to start Codex login')
   }
-  return loginUrl
+  return { verificationUrl, userCode }
 }
 
-export async function completeCodexLogin(callbackUrl: string): Promise<AccountsListResult> {
-  const response = await appFetch('/codex-api/accounts/login/complete', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ callbackUrl }),
-  })
+export async function getCodexLoginStatus(): Promise<CodexDeviceLoginStatus> {
+  const response = await appFetch('/codex-api/accounts/login/status')
   const payload = (await response.json()) as unknown
   if (!response.ok) {
-    throw new Error(getErrorMessageFromPayload(payload, 'Failed to complete Codex login'))
+    throw new Error(getErrorMessageFromPayload(payload, 'Failed to check Codex login'))
   }
   const envelope = asRecord(payload)
-  return normalizeAccountsListResult(envelope?.data)
+  const data = asRecord(envelope?.data)
+  const state = readString(data?.state)
+  if (state === 'idle' || state === 'pending') return { state }
+  if (state === 'error') {
+    return { state, message: readString(data?.message) ?? 'Failed to complete Codex login' }
+  }
+  if (state === 'complete') {
+    return { state, ...normalizeAccountsListResult(data) }
+  }
+  throw new Error('Invalid Codex login status')
+}
+
+export async function cancelCodexLogin(): Promise<void> {
+  const response = await appFetch('/codex-api/accounts/login/cancel', { method: 'POST' })
+  if (response.ok) return
+  const payload = (await response.json()) as unknown
+  throw new Error(getErrorMessageFromPayload(payload, 'Failed to cancel Codex login'))
 }
 
 export async function switchAccount(storageId: string): Promise<UiAccountEntry> {

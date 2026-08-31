@@ -166,7 +166,7 @@
                     </a>
                   </div>
                   <p v-if="accounts.length === 0" class="sidebar-settings-account-empty">
-                    {{ t('Click Login, or run `codex login`, then click reload.') }}
+                    {{ t('Sign in with ChatGPT to use Codex models.') }}
                   </p>
                   <div v-else class="sidebar-settings-account-list">
                   <article
@@ -1100,16 +1100,15 @@
     role="presentation"
     @click="onCancelCodexLoginModal"
   >
-    <form
+    <section
       class="codex-login-modal"
       role="dialog"
       aria-modal="true"
-      :aria-label="t('Complete Codex login')"
-      @submit.prevent="onSubmitCodexLoginCallback"
+      :aria-label="t('Sign in to Codex')"
       @click.stop
     >
       <div class="codex-login-modal-header">
-        <h2 class="codex-login-modal-title">{{ t('Complete Codex login') }}</h2>
+        <h2 class="codex-login-modal-title">{{ t('Sign in to Codex') }}</h2>
         <button
           class="codex-login-modal-close"
           type="button"
@@ -1121,26 +1120,21 @@
         </button>
       </div>
       <p class="codex-login-modal-copy">
-        {{ t('Finish login in the browser, then paste the localhost callback URL here.') }}
+        {{ t('Tap continue, then enter this one-time code on OpenAI. This screen will finish automatically.') }}
       </p>
-      <a
-        v-if="codexLoginUrl"
-        class="codex-login-modal-link"
-        :href="codexLoginUrl"
-        target="_blank"
-        rel="noreferrer"
+      <button
+        class="codex-login-modal-code"
+        type="button"
+        :aria-label="t('Copy device code')"
+        @click="onCopyCodexDeviceCode"
       >
-        {{ t('Open login URL') }}
-      </a>
-      <input
-        ref="codexLoginCallbackInputRef"
-        v-model="codexLoginCallbackUrl"
-        class="codex-login-modal-input"
-        type="url"
-        inputmode="url"
-        :placeholder="t('Paste localhost callback URL')"
-        :disabled="isCompletingCodexLogin"
-      >
+        <span>{{ codexDeviceCode }}</span>
+        <small>{{ hasCopiedCodexDeviceCode ? t('Copied') : t('Tap to copy') }}</small>
+      </button>
+      <p v-if="codexLoginIsWaiting" class="codex-login-modal-status" aria-live="polite">
+        <span class="codex-login-modal-spinner" aria-hidden="true"></span>
+        {{ t('Waiting for sign-in…') }}
+      </p>
       <div v-if="accountActionError" class="codex-login-modal-error visible-error-with-feedback">
         <span>{{ accountActionError }}</span>
         <a class="visible-error-feedback" :href="feedbackMailto" @click="prepareFeedbackLink($event, accountActionError)">{{ t('Send feedback') }}</a>
@@ -1154,15 +1148,18 @@
         >
           {{ t('Cancel') }}
         </button>
-        <button
+        <a
+          v-if="codexLoginUrl"
           class="codex-login-modal-submit"
-          type="submit"
-          :disabled="isCompletingCodexLogin || codexLoginCallbackUrl.trim().length === 0"
+          :href="codexLoginUrl"
+          target="_blank"
+          rel="noreferrer"
+          @click="onOpenCodexDeviceLogin"
         >
-          {{ isCompletingCodexLogin ? t('Completing…') : t('Complete') }}
-        </button>
+          {{ t('Copy code & continue') }}
+        </a>
       </div>
-    </form>
+    </section>
   </div>
 </template>
 
@@ -1204,9 +1201,10 @@ import {
   getReviewSummary,
   getWorktreeBranchOptions,
   getAccounts,
-  completeCodexLogin,
+  cancelCodexLogin,
   createLocalDirectory,
   getFirstLaunchPluginsCardPreference,
+  getCodexLoginStatus,
   getHomeDirectory,
   getTelegramConfig,
   getProjectRootSuggestion,
@@ -1602,8 +1600,10 @@ const isStartingCodexLogin = ref(false)
 const isCompletingCodexLogin = ref(false)
 const isCodexLoginModalOpen = ref(false)
 const codexLoginUrl = ref('')
-const codexLoginCallbackUrl = ref('')
-const codexLoginCallbackInputRef = ref<HTMLInputElement | null>(null)
+const codexDeviceCode = ref('')
+const hasCopiedCodexDeviceCode = ref(false)
+const codexLoginIsWaiting = ref(false)
+let codexLoginPollTimer: number | null = null
 const removingAccountId = ref('')
 const confirmingRemoveAccountId = ref('')
 const hoveredAccountId = ref('')
@@ -2171,6 +2171,7 @@ onUnmounted(() => {
     window.clearInterval(accountStatePollTimer)
     accountStatePollTimer = null
   }
+  clearCodexLoginPoll()
   if (threadSearchTimer) {
     clearTimeout(threadSearchTimer)
     threadSearchTimer = null
@@ -2653,15 +2654,21 @@ async function onSwitchAccount(storageId: string): Promise<void> {
 async function onStartCodexLogin(): Promise<void> {
   if (isRefreshingAccounts.value || isSwitchingAccounts.value || isStartingCodexLogin.value || isCompletingCodexLogin.value) return
   accountActionError.value = ''
-  codexLoginCallbackUrl.value = ''
+  codexDeviceCode.value = ''
+  hasCopiedCodexDeviceCode.value = false
   isStartingCodexLogin.value = true
   try {
-    const loginUrl = await startCodexLogin()
-    codexLoginUrl.value = loginUrl
+    const existingStatus = await getCodexLoginStatus()
+    if (existingStatus.state === 'complete') {
+      finishCodexLogin(existingStatus.accounts)
+      return
+    }
+    const login = await startCodexLogin()
+    codexLoginUrl.value = login.verificationUrl
+    codexDeviceCode.value = login.userCode
+    codexLoginIsWaiting.value = true
     isCodexLoginModalOpen.value = true
-    window.open(loginUrl, '_blank', 'noopener,noreferrer')
-    await nextTick()
-    codexLoginCallbackInputRef.value?.focus()
+    scheduleCodexLoginPoll(0)
   } catch (error) {
     accountActionError.value = error instanceof Error ? error.message : t('Failed to start Codex login')
   } finally {
@@ -2669,38 +2676,78 @@ async function onStartCodexLogin(): Promise<void> {
   }
 }
 
-function onCancelCodexLoginModal(): void {
-  if (isCompletingCodexLogin.value) return
+function finishCodexLogin(nextAccounts: UiAccountEntry[]): void {
+  accounts.value = nextAccounts
+  codexLoginIsWaiting.value = false
+  codexLoginUrl.value = ''
+  codexDeviceCode.value = ''
   isCodexLoginModalOpen.value = false
-  codexLoginCallbackUrl.value = ''
+  stopPolling()
+  startPolling()
+  void refreshAll({ includeSelectedThreadMessages: true })
 }
 
-async function onSubmitCodexLoginCallback(): Promise<void> {
-  const callbackUrl = codexLoginCallbackUrl.value.trim()
-  if (!callbackUrl) return
-  await completeCodexLoginFromCallback(callbackUrl)
+function clearCodexLoginPoll(): void {
+  if (codexLoginPollTimer === null) return
+  window.clearTimeout(codexLoginPollTimer)
+  codexLoginPollTimer = null
 }
 
-async function completeCodexLoginFromCallback(callbackUrl: string): Promise<void> {
-  if (isCompletingCodexLogin.value || callbackUrl.length === 0) return
-  accountActionError.value = ''
-  isCompletingCodexLogin.value = true
+function scheduleCodexLoginPoll(delayMs = 1000): void {
+  clearCodexLoginPoll()
+  codexLoginPollTimer = window.setTimeout(() => {
+    codexLoginPollTimer = null
+    void pollCodexLoginStatus()
+  }, delayMs)
+}
+
+async function pollCodexLoginStatus(): Promise<void> {
+  if (!isCodexLoginModalOpen.value || !codexLoginIsWaiting.value) return
   try {
-    const result = await completeCodexLogin(callbackUrl)
-    accounts.value = result.accounts
-    codexLoginUrl.value = ''
-    codexLoginCallbackUrl.value = ''
-    isCodexLoginModalOpen.value = false
-    stopPolling()
-    startPolling()
-    void refreshAll({
-      includeSelectedThreadMessages: true,
-    })
+    const status = await getCodexLoginStatus()
+    if (status.state === 'pending') {
+      scheduleCodexLoginPoll()
+      return
+    }
+    if (status.state === 'complete') {
+      isCompletingCodexLogin.value = true
+      finishCodexLogin(status.accounts)
+      return
+    }
+    codexLoginIsWaiting.value = false
+    accountActionError.value = status.state === 'error'
+      ? status.message
+      : t('Codex login stopped. Start again to continue.')
   } catch (error) {
+    codexLoginIsWaiting.value = false
     accountActionError.value = error instanceof Error ? error.message : t('Failed to complete Codex login')
   } finally {
     isCompletingCodexLogin.value = false
   }
+}
+
+async function onCopyCodexDeviceCode(): Promise<void> {
+  if (!codexDeviceCode.value) return
+  try {
+    await copyTextToClipboard(codexDeviceCode.value)
+    hasCopiedCodexDeviceCode.value = true
+  } catch {
+    hasCopiedCodexDeviceCode.value = false
+  }
+}
+
+function onOpenCodexDeviceLogin(): void {
+  void onCopyCodexDeviceCode()
+}
+
+function onCancelCodexLoginModal(): void {
+  if (isCompletingCodexLogin.value) return
+  clearCodexLoginPoll()
+  codexLoginIsWaiting.value = false
+  isCodexLoginModalOpen.value = false
+  codexLoginUrl.value = ''
+  codexDeviceCode.value = ''
+  void cancelCodexLogin().catch(() => undefined)
 }
 
 async function onRemoveAccount(storageId: string): Promise<void> {
@@ -4601,7 +4648,7 @@ function saveSidebarCollapsed(value: boolean): void {
 function loadAccountsSectionCollapsed(): boolean {
   if (typeof window === 'undefined') return true
   const value = window.localStorage.getItem(ACCOUNTS_SECTION_COLLAPSED_STORAGE_KEY)
-  if (value === null) return true
+  if (value === null) return false
   return value === '1'
 }
 
@@ -5738,12 +5785,24 @@ async function loadWorktreeBranches(sourceCwd: string): Promise<void> {
   @apply text-sm leading-5 text-zinc-600;
 }
 
-.codex-login-modal-link {
-  @apply min-w-0 truncate text-sm text-blue-600 hover:text-blue-700 hover:underline;
+.codex-login-modal-code {
+  @apply flex min-h-20 w-full flex-col items-center justify-center gap-1 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-blue-950 transition active:scale-[0.99];
 }
 
-.codex-login-modal-input {
-  @apply w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none transition focus:border-zinc-400 disabled:cursor-default disabled:opacity-60;
+.codex-login-modal-code span {
+  @apply font-mono text-2xl font-semibold tracking-[0.14em];
+}
+
+.codex-login-modal-code small {
+  @apply text-xs font-medium text-blue-600;
+}
+
+.codex-login-modal-status {
+  @apply flex items-center justify-center gap-2 text-sm text-zinc-500;
+}
+
+.codex-login-modal-spinner {
+  @apply h-3.5 w-3.5 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-700;
 }
 
 .codex-login-modal-error {
@@ -5756,44 +5815,11 @@ async function loadWorktreeBranches(sourceCwd: string): Promise<void> {
 
 .codex-login-modal-cancel,
 .codex-login-modal-submit {
-  @apply rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-sm text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-default disabled:opacity-60;
+  @apply inline-flex min-h-11 items-center justify-center rounded-full border border-zinc-200 bg-white px-4 py-2 text-sm text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-default disabled:opacity-60;
 }
 
 .codex-login-modal-submit {
   @apply border-zinc-900 bg-zinc-900 text-white hover:bg-zinc-800;
-}
-
-:global(:root.dark) .codex-login-modal {
-  @apply border-zinc-700 bg-zinc-900;
-}
-
-:global(:root.dark) .codex-login-modal-title {
-  @apply text-zinc-100;
-}
-
-:global(:root.dark) .codex-login-modal-close,
-:global(:root.dark) .codex-login-modal-cancel {
-  @apply border-zinc-600 bg-zinc-800 text-zinc-200 hover:bg-zinc-700;
-}
-
-:global(:root.dark) .codex-login-modal-copy {
-  @apply text-zinc-300;
-}
-
-:global(:root.dark) .codex-login-modal-link {
-  @apply text-sky-300 hover:text-sky-200;
-}
-
-:global(:root.dark) .codex-login-modal-input {
-  @apply border-zinc-600 bg-zinc-950 text-zinc-100 placeholder:text-zinc-500 focus:border-zinc-400;
-}
-
-:global(:root.dark) .codex-login-modal-error {
-  @apply bg-rose-950/40 text-rose-200;
-}
-
-:global(:root.dark) .codex-login-modal-submit {
-  @apply border-zinc-200 bg-zinc-100 text-zinc-900 hover:bg-white;
 }
 
 .sidebar-settings-account-list {

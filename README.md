@@ -124,10 +124,10 @@ Notes:
 
 ### Reverse proxy path prefix
 
-Set `CODEXUI_BASE_PATH` when a reverse proxy exposes each Codex UI instance below a workspace-specific path:
+Pass `--base-path` when a reverse proxy exposes each Codex UI instance below a workspace-specific path:
 
 ```bash
-CODEXUI_BASE_PATH=/codex/<workspace-id> npx codexapp --no-tunnel --port 5900
+npx codexapp --base-path /codex/<workspace-id> --no-tunnel --port 5900
 ```
 
 The browser then uses URLs such as `/codex/<workspace-id>/codex-api/rpc` and `/codex/<workspace-id>/codex-api/ws` for HTTP and WebSocket traffic. Assets, the web manifest, service worker, local-file routes, and login requests use the same prefix. The server accepts both prefixed requests and unprefixed requests, so an ingress may use the prefix to select a workspace and strip it before forwarding upstream.

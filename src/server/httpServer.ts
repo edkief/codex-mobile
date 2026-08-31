@@ -76,7 +76,7 @@ function readWildcardPathParam(value: unknown): string {
 
 export function createServer(options: ServerOptions = {}): ServerInstance {
   const app = express()
-  const basePath = normalizeBasePath(options.basePath ?? process.env.CODEXUI_BASE_PATH)
+  const basePath = normalizeBasePath(options.basePath)
   const bridge = createCodexBridgeMiddleware()
   const authSession = options.password ? createAuthSession(options.password, { cookiePath: basePath || '/' }) : null
 

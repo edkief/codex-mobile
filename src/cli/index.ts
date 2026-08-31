@@ -496,6 +496,7 @@ async function addProjectOnly(projectPath: string): Promise<void> {
 
 async function startServer(options: {
   port: string
+  basePath: string
   password: string | boolean
   tunnel: boolean
   open: boolean
@@ -530,12 +531,13 @@ async function startServer(options: {
     console.log('\nCodex is not logged in. You can log in later via settings or run `codexui login`.\n')
   }
   const requestedPort = parseInt(options.port, 10)
+  const basePath = normalizeBasePath(options.basePath)
   const passwordResolution = resolvePassword(options.password)
   const password = passwordResolution.password
   const generatedPasswordPath = password && passwordResolution.generated
     ? await persistGeneratedPassword(password)
     : null
-  const { app, dispose, attachWebSocket } = createApp({ password })
+  const { app, dispose, attachWebSocket } = createApp({ password, basePath })
   const server = createServer(app)
   attachWebSocket(server)
   const port = await listenWithFallback(server, requestedPort)
@@ -568,7 +570,6 @@ async function startServer(options: {
     `  Codex sandbox: ${runtimeConfig.sandboxMode}`,
     `  Approval policy: ${runtimeConfig.approvalPolicy}`,
   ]
-  const basePath = normalizeBasePath(process.env.CODEXUI_BASE_PATH)
   const accessUrls = getAccessibleUrls(port, basePath)
   if (accessUrls.length > 0) {
     lines.push(`  Local:    ${accessUrls[0]}`)
@@ -632,6 +633,7 @@ program
   .argument('[projectPath]', 'project directory to open on launch')
   .option('--open-project <path>', 'open project directory on launch (Codex desktop parity)')
   .option('-p, --port <port>', 'port to listen on', '5900')
+  .option('--base-path <path>', 'URL path prefix used when serving behind a reverse proxy', '')
   .option('--password <pass>', 'set a specific password')
   .option('--no-password', 'disable password protection')
   .option('--tunnel', 'start cloudflared tunnel (default is auto by Tailscale detection)', true)
@@ -648,6 +650,7 @@ program
     projectPath: string | undefined,
     opts: {
       port: string
+      basePath: string
       password: string | boolean
       tunnel: boolean
       open: boolean

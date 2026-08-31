@@ -102,7 +102,7 @@ function resolveViteRollbackDebugFallback(): string {
 }
 
 const viteRollbackDebugFallback = resolveViteRollbackDebugFallback();
-const configuredBasePath = normalizeBasePath(process.env.CODEXUI_BASE_PATH);
+const configuredBasePath = normalizeBasePath(process.env.VITE_CODEXUI_BASE_PATH);
 
 export default defineConfig({
   base: configuredBasePath ? `${configuredBasePath}/` : "./",

@@ -2,7 +2,7 @@
 
 ## Feature/change
 
-`CODEXUI_BASE_PATH` scopes frontend assets, API requests, local-file links, SSE, and WebSocket traffic below a workspace-specific URL prefix.
+The `--base-path` CLI option scopes frontend assets, API requests, local-file links, SSE, and WebSocket traffic below a workspace-specific URL prefix.
 
 ## Prerequisites/setup
 
@@ -12,7 +12,7 @@
 
 ## Actions
 
-1. Start the built CLI with `CODEXUI_BASE_PATH=/codex/workspace-a` on the unused port.
+1. Start the built CLI with `--base-path /codex/workspace-a` on the unused port.
 2. Open `/codex/workspace-a/` and inspect the loaded document, manifest, icons, JavaScript, and CSS requests.
 3. Trigger an RPC call and inspect its HTTP URL.
 4. Inspect the realtime connection URL; if WebSocket is unavailable, inspect the SSE fallback URL.
@@ -28,8 +28,8 @@
 - Local image, browser, editor, and directory-picker URLs retain the prefix.
 - The path without a trailing slash redirects to `/codex/workspace-a/`.
 - The server also accepts the unprefixed API request after ingress-style prefix stripping.
-- Existing root deployment behavior remains unchanged when `CODEXUI_BASE_PATH` is unset.
+- Existing root deployment behavior remains unchanged when `--base-path` is omitted.
 
 ## Rollback/cleanup
 
-Stop the test server and unset `CODEXUI_BASE_PATH`.
+Stop the test server.

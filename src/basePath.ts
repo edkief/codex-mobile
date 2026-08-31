@@ -8,12 +8,12 @@ export function normalizeBasePath(value: string | undefined | null): string {
   const trimmed = value?.trim() ?? ''
   if (!trimmed || trimmed === '/') return ''
   if (trimmed.includes('?') || trimmed.includes('#') || trimmed.includes('\\') || /[\s"'<>]/u.test(trimmed)) {
-    throw new Error('CODEXUI_BASE_PATH must contain only URL path segments')
+    throw new Error('Base path must contain only URL path segments')
   }
 
   const normalized = `/${trimmed.replace(/^\/+|\/+$/gu, '')}`.replace(/\/{2,}/gu, '/')
   if (normalized.split('/').some((segment) => segment === '.' || segment === '..')) {
-    throw new Error('CODEXUI_BASE_PATH cannot contain . or .. segments')
+    throw new Error('Base path cannot contain . or .. segments')
   }
   return normalized
 }

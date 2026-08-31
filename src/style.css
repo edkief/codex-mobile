@@ -111,6 +111,47 @@
   @apply text-sky-300 hover:text-sky-200;
 }
 
+:root.dark .codex-login-modal-code {
+  @apply border-sky-700 bg-sky-950/60 text-sky-100;
+}
+
+:root.dark .codex-login-modal {
+  @apply border-zinc-700 bg-zinc-900;
+}
+
+:root.dark .codex-login-modal-title {
+  @apply text-zinc-100;
+}
+
+:root.dark .codex-login-modal-close,
+:root.dark .codex-login-modal-cancel {
+  @apply border-zinc-600 bg-zinc-800 text-zinc-200 hover:bg-zinc-700;
+}
+
+:root.dark .codex-login-modal-copy {
+  @apply text-zinc-300;
+}
+
+:root.dark .codex-login-modal-code small {
+  @apply text-sky-300;
+}
+
+:root.dark .codex-login-modal-status {
+  @apply text-zinc-300;
+}
+
+:root.dark .codex-login-modal-spinner {
+  @apply border-zinc-600 border-t-zinc-100;
+}
+
+:root.dark .codex-login-modal-error {
+  @apply bg-rose-950/40 text-rose-200;
+}
+
+:root.dark .codex-login-modal-submit {
+  @apply border-zinc-200 bg-zinc-100 text-zinc-900 hover:bg-white;
+}
+
 :root.dark .sidebar-settings-account-empty {
   @apply text-zinc-400;
 }

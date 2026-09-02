@@ -18,7 +18,9 @@ export function normalizeBasePath(value: string | undefined | null): string {
   return normalized
 }
 
-export function getAppBasePath(): string {
+let cachedAppBasePath: string | null = null
+
+function resolveAppBasePath(): string {
   const injected = readInjectedBasePath()
   if (injected) return normalizeBasePath(injected)
 
@@ -28,15 +30,22 @@ export function getAppBasePath(): string {
   return normalizeBasePath(viteBasePath)
 }
 
-export function appPath(path: string, basePath = getAppBasePath()): string {
+// The prefix is injected into the document before any script runs and cannot change
+// afterwards, so resolve it once instead of querying the DOM for every URL.
+export function getAppBasePath(): string {
+  cachedAppBasePath ??= resolveAppBasePath()
+  return cachedAppBasePath
+}
+
+export function appPath(path: string, basePath?: string): string {
   if (!path.startsWith('/')) return path
-  const normalizedBasePath = normalizeBasePath(basePath)
+  const normalizedBasePath = basePath === undefined ? getAppBasePath() : normalizeBasePath(basePath)
   if (!normalizedBasePath || path === normalizedBasePath || path.startsWith(`${normalizedBasePath}/`)) return path
   return `${normalizedBasePath}${path}`
 }
 
-export function stripAppBasePath(path: string, basePath = getAppBasePath()): string {
-  const normalizedBasePath = normalizeBasePath(basePath)
+export function stripAppBasePath(path: string, basePath?: string): string {
+  const normalizedBasePath = basePath === undefined ? getAppBasePath() : normalizeBasePath(basePath)
   if (!normalizedBasePath) return path
   if (path === normalizedBasePath) return '/'
   return path.startsWith(`${normalizedBasePath}/`) ? path.slice(normalizedBasePath.length) : path

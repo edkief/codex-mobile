@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { appPath, normalizeBasePath, stripAppBasePath } from './basePath'
+import { appPath, getAppBasePath, normalizeBasePath, stripAppBasePath } from './basePath'
 
 describe('configurable base path', () => {
   it('normalizes optional leading and trailing slashes', () => {
@@ -15,6 +15,13 @@ describe('configurable base path', () => {
   it('strips the configured prefix when inspecting application URLs', () => {
     expect(stripAppBasePath('/codex/workspace-1/codex-local-image?path=x', '/codex/workspace-1'))
       .toBe('/codex-local-image?path=x')
+  })
+
+  it('resolves the ambient prefix once and reuses it for default arguments', () => {
+    const first = getAppBasePath()
+    expect(getAppBasePath()).toBe(first)
+    expect(appPath('/codex-api/rpc')).toBe(appPath('/codex-api/rpc', first))
+    expect(stripAppBasePath('/codex-api/rpc')).toBe(stripAppBasePath('/codex-api/rpc', first))
   })
 
   it('rejects traversal and non-path delimiters', () => {
